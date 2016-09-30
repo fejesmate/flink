@@ -19,7 +19,10 @@
 
 package org.apache.flink.ml.optimization
 
+import breeze.numerics._
+import org.apache.flink.api.common.functions.{FilterFunction, RichFilterFunction}
 import org.apache.flink.api.scala._
+import org.apache.flink.configuration.Configuration
 import org.apache.flink.ml.common._
 import org.apache.flink.ml.math._
 import org.apache.flink.ml.optimization.IterativeSolver._
@@ -47,7 +50,7 @@ import org.apache.flink.ml._
   *                      [[IterativeSolver.LearningRateMethodValue]] determines functional form of
   *                      effective learning rate.
   */
-abstract class GradientDescent extends IterativeSolver {
+abstract class StochasticGradientDescent extends IterativeSolver {
 
   /** Provides a solution for the given optimization problem
     *
@@ -56,8 +59,8 @@ abstract class GradientDescent extends IterativeSolver {
     * @return The weights, optimized for the provided data.
     */
   override def optimize(
-    data: DataSet[LabeledVector],
-    initialWeights: Option[DataSet[WeightVector]]): DataSet[WeightVector] = {
+                         data: DataSet[LabeledVector],
+                         initialWeights: Option[DataSet[WeightVector]]): DataSet[WeightVector] = {
 
     val numberOfIterations: Int = parameters(Iterations)
     val convergenceThresholdOption: Option[Double] = parameters.get(ConvergenceThreshold)
@@ -65,10 +68,11 @@ abstract class GradientDescent extends IterativeSolver {
     val learningRate = parameters(LearningRate)
     val regularizationConstant = parameters(RegularizationConstant)
     val learningRateMethod = parameters(LearningRateMethodValue)
+    val miniBatchRate = parameters(MiniBatchRate)
     // Initialize weights
     val initialWeightsDS: DataSet[WeightVector] = createInitialWeightsDS(initialWeights, data)
-    print("initial weights: ")
-    initialWeightsDS.print()
+//    print("initial weights: ")
+//    initialWeightsDS.print()
 
     // Perform the iterations
     convergenceThresholdOption match {
@@ -80,6 +84,7 @@ abstract class GradientDescent extends IterativeSolver {
           numberOfIterations,
           regularizationConstant,
           learningRate,
+          miniBatchRate,
           lossFunction,
           learningRateMethod)
       case Some(convergence) =>
@@ -90,21 +95,23 @@ abstract class GradientDescent extends IterativeSolver {
           regularizationConstant,
           learningRate,
           convergence,
+          miniBatchRate,
           lossFunction,
           learningRateMethod)
     }
   }
 
   def optimizeWithConvergenceCriterion(
-      dataPoints: DataSet[LabeledVector],
-      initialWeightsDS: DataSet[WeightVector],
-      numberOfIterations: Int,
-      regularizationConstant: Double,
-      learningRate: Double,
-      convergenceThreshold: Double,
-      lossFunction: LossFunction,
-      learningRateMethod: LearningRateMethodTrait)
-    : DataSet[WeightVector] = {
+                                        dataPoints: DataSet[LabeledVector],
+                                        initialWeightsDS: DataSet[WeightVector],
+                                        numberOfIterations: Int,
+                                        regularizationConstant: Double,
+                                        learningRate: Double,
+                                        convergenceThreshold: Double,
+                                        miniBatchRate: Double,
+                                        lossFunction: LossFunction,
+                                        learningRateMethod: LearningRateMethodTrait)
+  : DataSet[WeightVector] = {
     // We have to calculate for each weight vector the sum of squared residuals,
     // and then sum them and apply regularization
     val initialLossSumDS = calculateLoss(dataPoints, initialWeightsDS, lossFunction)
@@ -123,13 +130,14 @@ abstract class GradientDescent extends IterativeSolver {
 
         val r = scala.util.Random
         //IDE KENE A RANDOM MINTAVETELEZES dataPontsMB=rndsampling(dataPoints,ms_size)
-//        dataPoints.map(x=>(x,r.nextFloat))
+        //        dataPoints.map(x=>(x,r.nextFloat))
         val currentWeightsDS = SGDStep(
           dataPoints,
           previousWeightsDS,
           lossFunction,
           regularizationConstant,
           learningRate,
+          miniBatchRate,
           learningRateMethod)
 
         val currentLossSumDS = calculateLoss(dataPoints, currentWeightsDS, lossFunction)
@@ -154,22 +162,24 @@ abstract class GradientDescent extends IterativeSolver {
   }
 
   def optimizeWithoutConvergenceCriterion(
-      data: DataSet[LabeledVector],
-      initialWeightsDS: DataSet[WeightVector],
-      numberOfIterations: Int,
-      regularizationConstant: Double,
-      learningRate: Double,
-      lossFunction: LossFunction,
-      optimizationMethod: LearningRateMethodTrait)
-    : DataSet[WeightVector] = {
+                                           data: DataSet[LabeledVector],
+                                           initialWeightsDS: DataSet[WeightVector],
+                                           numberOfIterations: Int,
+                                           regularizationConstant: Double,
+                                           learningRate: Double,
+                                           miniBatchRate: Double,
+                                           lossFunction: LossFunction,
+                                           optimizationMethod: LearningRateMethodTrait)
+  : DataSet[WeightVector] = {
     initialWeightsDS.iterate(numberOfIterations) {
       weightVectorDS => {
         SGDStep(data,
-                weightVectorDS,
-                lossFunction,
-                regularizationConstant,
-                learningRate,
-                optimizationMethod)
+          weightVectorDS,
+          lossFunction,
+          regularizationConstant,
+          learningRate,
+          miniBatchRate,
+          optimizationMethod)
       }
     }
   }
@@ -181,59 +191,101 @@ abstract class GradientDescent extends IterativeSolver {
     * @return A Dataset containing the weights after one stochastic gradient descent step
     */
   private def SGDStep(
-    data: DataSet[(LabeledVector)],
-    currentWeights: DataSet[WeightVector],
-    lossFunction: LossFunction,
-    regularizationConstant: Double,
-    learningRate: Double,
-    learningRateMethod: LearningRateMethodTrait)
+                       data: DataSet[(LabeledVector)],
+                       currentWeights: DataSet[WeightVector],
+                       lossFunction: LossFunction,
+                       regularizationConstant: Double,
+                       learningRate: Double,
+                       miniBatchRate: Double,
+                       learningRateMethod: LearningRateMethodTrait)
   : DataSet[WeightVector] = {
 
-    data.mapWithBcVariable(currentWeights){
-      (data, weightVector) => (lossFunction.gradient(data, weightVector), 1)
-    }.reduce{
-      (left, right) =>
-        val (leftGradVector, leftCount) = left
-        val (rightGradVector, rightCount) = right
+//    val r = scala.util.Random
+//    val data1=data.map{(_,ceil(scala.util.Random.nextFloat()*2.5))} //40%os mb size-nal
 
-        // make the left gradient dense so that the following reduce operations (left fold) reuse
-        // it. This strongly depends on the underlying implementation of the ReduceDriver which
-        // always passes the new input element as the second parameter
-        val result = leftGradVector.weights match {
-          case d: DenseVector => d
-          case s: SparseVector => s.toDenseVector
-        }
 
-        // Add the right gradient to the result
-        BLAS.axpy(1.0, rightGradVector.weights, result)
-        val gradients = WeightVector(
-          result, leftGradVector.intercept + rightGradVector.intercept)
+//    currentWeights.iterate(10){
+//      inSGDWeights =>
 
-        (gradients , leftCount + rightCount)
-    }.mapWithBcVariableIteration(currentWeights){
-      (gradientCount, weightVector, iteration) => {
-        val (WeightVector(weights, intercept), count) = gradientCount
-
-        BLAS.scal(1.0/count, weights)
+      println("mb iter")
+    data.map{(_,ceil(scala.util.Random.nextFloat()/miniBatchRate))}// 1/mbrate /itt 40%/
+        .filter(_._2==1)
+//        .filter(new RichFilterFunction[(LabeledVector, Double)]{
 //
-        val gradient = WeightVector(weights, intercept/count)
-//        val gradient = WeightVector(weights, intercept)
-        val effectiveLearningRate = learningRateMethod.calculateLearningRate(
-          learningRate,
-          iteration,
-          regularizationConstant)
+//        var it = 0
+//
+//        override def open(parameters: Configuration): Unit = {
+//          super.open(parameters)
+//          it = getIterationRuntimeContext.getSuperstepNumber
+//          println(it)
+//        }
+//
+//        override def filter(value: (LabeledVector,Double)): Boolean = {value._2==1}
+//      })
+//        .filter(_._2==ind)
+        .mapWithBcVariable(currentWeights){
+        (data, weightVector) =>  (lossFunction.gradient(data._1, weightVector), 1)
+      }.reduce{
+        (left, right) =>
+          val (leftGradVector, leftCount) = left
+          val (rightGradVector, rightCount) = right
 
-        val newWeights = takeStep(
-          weightVector.weights,
-          gradient.weights,
-          regularizationConstant,
-          effectiveLearningRate)
+          // make the left gradient dense so that the following reduce operations (left fold) reuse
+          // it. This strongly depends on the underlying implementation of the ReduceDriver which
+          // always passes the new input element as the second parameter
+          val result = leftGradVector.weights match {
+            case d: DenseVector => d
+            case s: SparseVector => s.toDenseVector
+          }
 
-        WeightVector(
-          newWeights,
-          weightVector.intercept - effectiveLearningRate * gradient.intercept)
+          // Add the right gradient to the result
+          BLAS.axpy(1.0, rightGradVector.weights, result)
+          val gradients = WeightVector(
+            result, leftGradVector.intercept + rightGradVector.intercept)
+
+          (gradients , leftCount + rightCount)
+
+      }.mapWithBcVariableIteration(currentWeights){
+        (gradientCount, weightVector, iteration) => {
+          val (WeightVector(weights, intercept), count) = gradientCount
+
+                  BLAS.scal(1.0/count, weights)
+
+                  val gradient = WeightVector(weights, intercept/count)
+//          val gradient = WeightVector(weights, intercept)
+          val effectiveLearningRate = learningRateMethod.calculateLearningRate(
+            learningRate,
+//            iteration,
+            1,
+            regularizationConstant)
+//        }.mapWithBcVariable(currentWeights){
+//          (gradientCount, weightVector) => {
+//            val (WeightVector(weights, intercept), count) = gradientCount
+//
+//            //        BLAS.scal(1.0/count, weights)
+//            //
+//            //        val gradient = WeightVector(weights, intercept/count)
+//            val gradient = WeightVector(weights, intercept)
+//            val effectiveLearningRate = learningRateMethod.calculateLearningRate(
+//              learningRate,
+//              1,
+//              regularizationConstant)
+
+          val newWeights = takeStep(
+            weightVector.weights,
+            gradient.weights,
+            regularizationConstant,
+            effectiveLearningRate)
+
+//          ind=ind+1
+
+          WeightVector(
+            newWeights,
+            weightVector.intercept - effectiveLearningRate * gradient.intercept)
+
+        }
       }
-    }
+//    }
   }
 
   /** Calculates the new weights based on the gradient
@@ -245,11 +297,11 @@ abstract class GradientDescent extends IterativeSolver {
     * @return
     */
   def takeStep(
-    weightVector: Vector,
-    gradient: Vector,
-    regularizationConstant: Double,
-    learningRate: Double
-    ): Vector
+                weightVector: Vector,
+                gradient: Vector,
+                regularizationConstant: Double,
+                learningRate: Double
+              ): Vector
 
   /** Calculates the regularized loss, from the data and given weights.
     *
@@ -259,10 +311,10 @@ abstract class GradientDescent extends IterativeSolver {
     * @return
     */
   private def calculateLoss(
-      data: DataSet[LabeledVector],
-      weightDS: DataSet[WeightVector],
-      lossFunction: LossFunction)
-    : DataSet[Double] = {
+                             data: DataSet[LabeledVector],
+                             weightDS: DataSet[WeightVector],
+                             lossFunction: LossFunction)
+  : DataSet[Double] = {
     data.mapWithBcVariable(weightDS){
       (data, weightVector) => (lossFunction.loss(data, weightVector), 1)
     }.reduce{
@@ -277,7 +329,7 @@ abstract class GradientDescent extends IterativeSolver {
   *
   * The regularization function is `1/2 ||w||_2^2` with `w` being the weight vector.
   */
-class GradientDescentL2 extends GradientDescent {
+class StochasticGradientDescentL2 extends StochasticGradientDescent {
 
   /** Calculates the new weights based on the gradient
     *
@@ -288,11 +340,11 @@ class GradientDescentL2 extends GradientDescent {
     * @return
     */
   override def takeStep(
-      weightVector: Vector,
-      gradient: Vector,
-      regularizationConstant: Double,
-      learningRate: Double)
-    : Vector = {
+                         weightVector: Vector,
+                         gradient: Vector,
+                         regularizationConstant: Double,
+                         learningRate: Double)
+  : Vector = {
     // add the gradient of the L2 regularization
     BLAS.axpy(regularizationConstant, weightVector, gradient)
 
@@ -303,15 +355,15 @@ class GradientDescentL2 extends GradientDescent {
   }
 }
 
-object GradientDescentL2 {
-  def apply() = new GradientDescentL2
+object StochasticGradientDescentL2 {
+  def apply() = new StochasticGradientDescentL2
 }
 
 /** Implementation of a SGD solver with L1 regularization.
   *
   * The regularization function is `||w||_1` with `w` being the weight vector.
   */
-class GradientDescentL1 extends GradientDescent {
+class StochasticGradientDescentL1 extends StochasticGradientDescent {
 
   /** Calculates the new weights based on the gradient.
     *
@@ -322,11 +374,11 @@ class GradientDescentL1 extends GradientDescent {
     * @return
     */
   override def takeStep(
-      weightVector: Vector,
-      gradient: Vector,
-      regularizationConstant: Double,
-      learningRate: Double)
-    : Vector = {
+                         weightVector: Vector,
+                         gradient: Vector,
+                         regularizationConstant: Double,
+                         learningRate: Double)
+  : Vector = {
     // Update weight vector with gradient. L1 regularization has no gradient, the proximal operator
     // does the job.
     BLAS.axpy(-learningRate, gradient, weightVector)
@@ -345,15 +397,15 @@ class GradientDescentL1 extends GradientDescent {
   }
 }
 
-object GradientDescentL1 {
-  def apply() = new GradientDescentL1
+object StochasticGradientDescentL1 {
+  def apply() = new StochasticGradientDescentL1
 }
 
 /** Implementation of a SGD solver without regularization.
   *
   * No regularization is applied.
   */
-class SimpleGradientDescent extends GradientDescent {
+class SimpleStochasticGradientDescent extends StochasticGradientDescent {
 
   /** Calculates the new weights based on the gradient.
     *
@@ -364,17 +416,17 @@ class SimpleGradientDescent extends GradientDescent {
     * @return
     */
   override def takeStep(
-      weightVector: Vector,
-      gradient: Vector,
-      regularizationConstant: Double,
-      learningRate: Double)
-    : Vector = {
+                         weightVector: Vector,
+                         gradient: Vector,
+                         regularizationConstant: Double,
+                         learningRate: Double)
+  : Vector = {
     // Update the weight vector
     BLAS.axpy(-learningRate, gradient, weightVector)
     weightVector
   }
 }
 
-object SimpleGradientDescent{
-  def apply() = new SimpleGradientDescent
+object SimpleStochasticGradientDescent{
+  def apply() = new SimpleStochasticGradientDescent
 }

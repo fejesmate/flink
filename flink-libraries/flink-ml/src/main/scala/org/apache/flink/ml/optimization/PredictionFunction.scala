@@ -38,3 +38,14 @@ object LinearPrediction extends PredictionFunction {
     WeightVector(features.copy, 1)
   }
 }
+
+/** A logiatic prediction function **/
+object LogisticPrediction extends PredictionFunction {
+  override def predict(features: FlinkVector, weightVector: WeightVector): Double = {
+    BLAS.logist(BLAS.dot(features, weightVector.weights) + weightVector.intercept)
+  }
+
+  override def gradient(features: FlinkVector, weights: WeightVector): WeightVector = {
+    WeightVector(features.copy, 1)
+  }
+}

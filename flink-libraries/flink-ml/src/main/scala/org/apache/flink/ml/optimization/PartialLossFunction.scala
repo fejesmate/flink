@@ -18,6 +18,8 @@
 
 package org.apache.flink.ml.optimization
 
+import breeze.numerics.{exp, log}
+
 /** Represents loss functions which can be used with the [[GenericLossFunction]].
   *
   */
@@ -53,6 +55,34 @@ object SquaredLoss extends PartialLossFunction {
     */
   override def loss(prediction: Double, label: Double): Double = {
     0.5 * (prediction - label) * (prediction - label)
+  }
+
+  /** Calculates the derivative of the [[PartialLossFunction]]
+    *
+    * @param prediction
+    * @param label
+    * @return
+    */
+  override def derivative(prediction: Double, label: Double): Double = {
+    (prediction - label)
+  }
+}
+
+
+object LogLoss extends PartialLossFunction {
+
+  /** Calculates the loss depending on the label and the prediction
+    *
+    * @param prediction
+    * @param label
+    * @return
+    */
+  override def loss(prediction: Double, label: Double): Double = {
+    -1*(label*log(prediction) + (1-label)*log(1 - prediction))
+    //(label*log(prediction)+(1-label)*log(1-prediction))
+    //log(1+exp(-1*prediction*label))
+
+
   }
 
   /** Calculates the derivative of the [[PartialLossFunction]]

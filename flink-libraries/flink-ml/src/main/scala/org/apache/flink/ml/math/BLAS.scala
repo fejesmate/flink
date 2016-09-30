@@ -18,8 +18,9 @@
 
 package org.apache.flink.ml.math
 
-import com.github.fommil.netlib.{BLAS => NetlibBLAS, F2jBLAS}
+import breeze.numerics.exp
 import com.github.fommil.netlib.BLAS.{getInstance => NativeBLAS}
+import com.github.fommil.netlib.{F2jBLAS, BLAS => NetlibBLAS}
 
 /**
  * BLAS routines for vectors and matrices.
@@ -39,6 +40,13 @@ object BLAS extends Serializable {
     }
     _f2jBLAS
   }
+
+  /**
+    * y += exp(x)/(1+exp(x))
+    */
+
+  def logist(x: Double):Double=(exp(x)/(1 + exp(x)))
+
 
   /**
    * y += a * x

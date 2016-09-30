@@ -137,6 +137,10 @@ abstract class IterativeSolver() extends Solver {
     parameters.add(LearningRateMethodValue, learningRateMethod)
     this
   }
+  def setMiniBatchRate(miniBatchRate: Double): this.type = {
+    parameters.add(MiniBatchRate, miniBatchRate)
+    this
+  }
 }
 
 object IterativeSolver {
@@ -156,9 +160,14 @@ object IterativeSolver {
     val defaultValue = None
   }
 
+  case object MiniBatchRate extends Parameter[Double] {
+    val defaultValue = None//Some(0.5)
+  }
+
   case object LearningRateMethodValue extends Parameter[LearningRateMethodTrait] {
     val defaultValue = Some(LearningRateMethod.Default)
   }
+
 }
 
 object LearningRateMethod {
@@ -171,11 +180,20 @@ object LearningRateMethod {
     : Double
   }
 
-  object Default extends LearningRateMethodTrait {
+  object  Default extends LearningRateMethodTrait {
     override def calculateLearningRate(
       initialLearningRate: Double,
       iteration: Int,
       regularizationConstant: Double)
+    : Double = {
+      initialLearningRate / Math.sqrt(iteration)
+    }
+  }
+  object  IterNumbInv extends LearningRateMethodTrait {
+    override def calculateLearningRate(
+                                        initialLearningRate: Double,
+                                        iteration: Int,
+                                        regularizationConstant: Double)
     : Double = {
       initialLearningRate / Math.sqrt(iteration)
     }

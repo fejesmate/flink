@@ -44,6 +44,18 @@ under the License.
 			<artifactId>flink-scala_2.10</artifactId>
 			<version>${project.version}</version>
 		</dependency>
+
+		<dependency>
+			<groupId>org.apache.flink</groupId>
+			<artifactId>flink-ml_2.10</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+
+		<!--<dependency>-->
+			<!--<groupId>org.apache.flink</groupId>-->
+			<!--<artifactId>flink-libraries</artifactId>-->
+			<!--<version>${project.version}</version>-->
+		<!--</dependency>-->
 	</dependencies>
 	
 	
