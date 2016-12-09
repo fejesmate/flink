@@ -193,7 +193,7 @@ object LogistRegrDegubSImp {
         .setIterations(10)
         .setStepsize(1)
         .setConvergenceThreshold(0.0000001)
-        .setMiniBatchRate(0.3)
+//        .setMiniBatchRate(0.3)
         .setLearningRateMethod(LearningRateMethod.Default)
 
 
@@ -204,34 +204,38 @@ object LogistRegrDegubSImp {
       //val predictions = mlr.predict(testingDS)
       val prediction = mlr.predict(testingDS.map(_.vector))
         .map { x => (x._1, x._2, x._2 >= 0.5) }
-
-
-      val thr=0.3
+//
+//
+//      val thr=0.3
 
 
       //
-      val eval = prediction.join(testingDS).where(_._1.toVector)
-        .equalTo(_.vector).map(x => (x._2.label, x._1._2))//,(x._2.label>0)==x._1._3))
-//            .map(x=>(x._1._2,x._1._3,x._2.label))
+//      val eval = prediction.join(testingDS).where(_._1.toVector)
+//        .equalTo(_.vector).map(x => (x._2.label, x._1._2))//,(x._2.label>0)==x._1._3))
+////            .map(x=>(x._1._2,x._1._3,x._2.label))
 
 //      eval.writeAsCsv("/home/matefejes/Dropbox/SZTAKI/Flink/testdata/logres/1.csv","\n",",")
 //      eval.writeAsText("/home/matefejes/Dropbox/SZTAKI/Flink/testdata/logres/1.csv")
 //      env.execute()
-      val evallist=eval.collect()
-      val scalamin=evallist.minBy(_._2)
-      eval.print()
-      val vmi1=eval.reduce{(left,right)=>
-        if (left._2<=right._2)
-          left
-        else
-          right
-      }.collect().head
 
-      val vmimas=eval.min(1).print()//.collect().head._2
-      println(evallist)
-      println(vmi1)
-      println(vmimas)
-      println(scalamin)
+
+//      val evallist=eval.collect()
+//      val scalamin=evallist.minBy(_._2)
+//      eval.print()
+//      val vmi1=eval.reduce{(left,right)=>
+//        if (left._2<=right._2)
+//          left
+//        else
+//          right
+//      }.collect().head
+//
+//      val vmimas=eval.min(1).print()//.collect().head._2
+//      println(evallist)
+//      println(vmi1)
+//      println(vmimas)
+//      println(scalamin)
+//
+
 //      val precision = eval
 //
 //        .filter(_._2>0.1).map(x=>(1,x._1))

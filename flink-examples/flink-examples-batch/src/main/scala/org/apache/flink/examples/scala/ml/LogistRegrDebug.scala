@@ -24,6 +24,7 @@ import org.apache.flink.api.scala._
 import org.apache.flink.ml.math.{BLAS, DenseVector}
 import org.apache.flink.ml.common.LabeledVector
 import org.apache.flink.ml.optimization.LearningRateMethod
+import java.io._
 
 
 /**
@@ -106,18 +107,31 @@ object LogistRegrDebug {
 //      .map { x => LabeledVector(x(2), DenseVector(x.take(2).toArray)) }
     //.map(_.vector)
 
-    val trainingDS = env.readTextFile("/home/matefejes/Dropbox/SZTAKI/Flink/testdata/ucla_logreg_tan_norm.csv")
+//    val trainingDS = env.readTextFile("/home/matefejes/Dropbox/SZTAKI/Flink/testdata/ucla_logreg_tan_norm.csv")
+//      .map(x => x.split(","))
+//      .map(x => x.toList.map(_.toDouble))
+//      .map { x => LabeledVector(x(3), DenseVector(x.take(3).toArray)) } //42
+//
+//    //trainingDS.writeAsText("C:\\Users\\User\\Dropbox\\SZTAKI\\Flink
+//    // \\testdata\\res0.data")
+//
+//    val testingDS = env.readTextFile("/home/matefejes/Dropbox/SZTAKI/Flink/testdata/ucla_logreg_tan_norm.csv")
+//      .map(x => x.split(","))
+//      .map(x => x.toList.map(_.toDouble))
+//      .map { x => LabeledVector(x(3), DenseVector(x.take(3).toArray)) }
+
+    val trainingDS = env.readTextFile("/home/matefejes/Dropbox/SZTAKI/Flink/testdata/selfmade/noisedata/amp20_learn.csv")
       .map(x => x.split(","))
       .map(x => x.toList.map(_.toDouble))
-      .map { x => LabeledVector(x(3), DenseVector(x.take(3).toArray)) } //42
+      .map { x => LabeledVector(x(2), DenseVector(x.take(2).toArray)) } //42
 
     //trainingDS.writeAsText("C:\\Users\\User\\Dropbox\\SZTAKI\\Flink
     // \\testdata\\res0.data")
 
-    val testingDS = env.readTextFile("/home/matefejes/Dropbox/SZTAKI/Flink/testdata/ucla_logreg_tan_norm.csv")
+    val testingDS = env.readTextFile("/home/matefejes/Dropbox/SZTAKI/Flink/testdata/selfmade/noisedata/amp20_test.csv")
       .map(x => x.split(","))
       .map(x => x.toList.map(_.toDouble))
-      .map { x => LabeledVector(x(3), DenseVector(x.take(3).toArray)) }
+      .map { x => LabeledVector(x(2), DenseVector(x.take(2).toArray)) }
 
     //    val trainingDS = env.readTextFile("home/matefejes/Dropbox/SZTAKI/Flink
     // /testdata/otp_ru_2014-15_onehot_szep_mod1_tan.csv")
@@ -189,12 +203,12 @@ object LogistRegrDebug {
 
 
 
-    def runAndGetAUC(mbr:Double,lr:Double):Double={
+    def runAndGetAUC(lr:Double,iter:Int):Double={
       val mlr = org.apache.flink.ml.regression.MultipleLogisticRegression()
-        .setIterations(100)
+        .setIterations(iter)
         .setStepsize(lr)
-        .setConvergenceThreshold(0.0000001)
-        .setMiniBatchRate(mbr)
+        .setConvergenceThreshold(0.000000001)
+//        .setMiniBatchRate(mbr)
         .setLearningRateMethod(LearningRateMethod.Default)
 
 
@@ -221,14 +235,18 @@ object LogistRegrDebug {
 
       eval.print()
 //      val precision = eval
-//
 //        .filter(_._2>threshold).map(x=>(1,x._1))
 //        .reduce{(left,right)=>(left._1+right._1,left._2+right._2)}
 //        .map(x=>x._2/x._1).collect().head
+
+      val minPred=eval.map(x=>x._2).collect().min
+      val maxPred=eval.map(x=>x._2).collect().max
 //      val minPred=eval.min(2).collect().head._2
-//      val maxPred=eval.min(2).collect().head._2
+//      val maxPred=eval.max(2).collect().head._2
+
       val recFallPairs=for(
-        threshold <-Seq(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8)
+        threshold <-minPred to maxPred by (maxPred-minPred)/30
+//        threshold <-Seq(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8)
       )yield{
         val recall=eval
           .filter(_._1==1).map(x=>(x._1,round(x._2+(0.5-threshold))))
@@ -240,13 +258,13 @@ object LogistRegrDebug {
           .reduce{(left,right)=>(left._1+right._1,left._2+right._2)}
           .map(x=>x._2/x._1).collect().head
 
-        (recall,fallout)
+        (fallout,recall)
       }
 
 
 
       val ROC=recFallPairs.sortBy(_._1)
-      print(ROC)
+//      print(ROC)
 //      val ROC=((0.0,0,0) +: recFallPairs):+ (1.0,1.0)
 //      val ROC=Seq((0.0,0,0),recFallPairs.sortBy(_._1),(1.0,1.0))
 //      ROC.reduce{(left,right)=>(left._)}
@@ -264,12 +282,22 @@ object LogistRegrDebug {
     }
 
     val res =for (
-      mbr <- Seq(0.5); lr <- Seq(10)
+      lr <- 0.1 to 2 by 0.1;iter <- 1 to 10
+//      lr <- Seq(5000) ; iter <- Seq(2)
     ) yield {
-      runAndGetAUC(mbr,lr)
+      runAndGetAUC(lr,iter)
     }
 
   println(res)
+
+
+
+    val file = "whatever.txt"
+    val writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream("/home/matefejes/Dropbox/SZTAKI/LogisticRegression/results/iter1to10_lrate01to2_onnoise20")))
+    for (x <- res) {
+      writer.write(x + "\n")  // however you want to format it
+    }
+    writer.close()
     //
     //    val recall=eval
     //      .filter(_._1==1).map(x=>(x._1,round(x._2)))

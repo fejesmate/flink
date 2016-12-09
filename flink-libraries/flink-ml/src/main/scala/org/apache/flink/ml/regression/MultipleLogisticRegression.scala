@@ -116,10 +116,7 @@ class MultipleLogisticRegression extends Predictor[MultipleLogisticRegression ] 
     parameters.add(LearningRateMethodValue, learningRateMethod)
     this
   }
-  def setMiniBatchRate(miniBatchRate: Double): MultipleLogisticRegression  = {
-    parameters.add(MiniBatchRate, miniBatchRate)
-    this
-  }
+//
 
   def squaredResidualSum(input: DataSet[LabeledVector]): DataSet[Double] = {
     weightsOption match {
@@ -163,9 +160,9 @@ object MultipleLogisticRegression  {
   case object LearningRateMethodValue extends Parameter[LearningRateMethodTrait] {
     val defaultValue = None
   }
-  case object MiniBatchRate extends Parameter[Double] {
-    val defaultValue = None//Some(0.5)
-  }
+//  case object MiniBatchRate extends Parameter[Double] {
+//    val defaultValue = None//Some(0.5)
+//  }
 
   // ======================================== Factory methods ======================================
 
@@ -191,7 +188,7 @@ object MultipleLogisticRegression  {
       val numberOfIterations = map(Iterations)
       val stepsize = map(Stepsize)
       val convergenceThreshold = map.get(ConvergenceThreshold)
-      val miniBatchRate=map(MiniBatchRate)
+//      val miniBatchRate=map(MiniBatchRate)
       val learningRateMethod = map.get(LearningRateMethodValue)
 
       //val lossFunction = GenericLossFunction(LogLoss, LogisticPrediction)
@@ -199,13 +196,13 @@ object MultipleLogisticRegression  {
 
 
       //val optimizer = GradientDescentL2()
-//      val optimizer = SimpleGradientDescent()
-      val optimizer = SimpleStochasticGradientDescent()
+      val optimizer = SimpleGradientDescent()
+//      val optimizer = SimpleStochasticGradientDescent()
         .setIterations(numberOfIterations)
         .setStepsize(stepsize)
         .setLossFunction(lossFunction)
         .setLearningRateMethod(LearningRateMethod.IterNumbInv)
-        .setMiniBatchRate(miniBatchRate)
+//        .setMiniBatchRate(miniBatchRate)
 
       convergenceThreshold match {
         case Some(threshold) => optimizer.setConvergenceThreshold(threshold)
@@ -242,8 +239,8 @@ object MultipleLogisticRegression  {
         val dotProduct = value.asBreeze.dot(weights.asBreeze)
 
         //dotProduct + weight0
-        println("calculated weights")
-        println(weights,weight0)
+        //println("calculated weights")
+        //println(weights,weight0)
 
         BLAS.logist(dotProduct + weight0)
 
